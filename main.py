@@ -1,47 +1,49 @@
 
 import cv2
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
 
 from src.ui import MainWindow
-from src.vsource import VideoSource
-from src.scanner import scan_for_codes
+from src.video_source import VideoSource
+from src.scanner import Scanner, CodeType
+from src.partinfo import request_part_info_mouser
 
 
 FRAME_RATE = 30 
 FRAME_TIME = int(1000 / FRAME_RATE)
 
 
-def main() -> int:
-    window = MainWindow()
-    camera = VideoSource()
+window = MainWindow()
+camera = VideoSource()
+scanner = Scanner()
 
-    def update_frame() -> None:
+async def image_pipeline() -> None:
+    last_code: bytes = ""
+
+    while not window.exited:
         frame_raw = camera.get_frame()
-        frame = frame_raw #cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        #frame = cv2.adaptiveThreshold(
-        #    frame_raw,
-        #    255,
-        #    cv2.ADAPTIVE_THRESH_MEAN_C,
-        #    cv2.THRESH_BINARY,
-        #    31, 10
-        #)
-        #_, frame = cv2.threshold(
-        #    frame_raw,
-        #    128,
-        #    255,
-        #    cv2.THRESH_BINARY
-        #)
+        frame = cv2.cvtColor(frame_raw, cv2.COLOR_BGR2RGB)
 
-        found_codes = scan_for_codes(frame)
+        found_codes = scanner.scan_for_codes(frame)
         for result in found_codes:
-            result.draw_bounds(frame, (255, 0, 0), 2)
+            result.draw_bounds(frame, (0, 255, 0), 2)
+            if result.type == CodeType.DATAMATRIX_2D and last_code != result.data:
+                print("new code")
+                print(await request_part_info_mouser(result.data))
+                last_code = result.data
+
 
         window.set_image(frame)
-        window.after(FRAME_TIME, update_frame)
-    
-    window.after(FRAME_TIME, update_frame)
-    window.run()
+        await asyncio.sleep(0.02)
+
+async def main() -> int:
+
+    await asyncio.gather(
+        window.run(),
+        image_pipeline()
+    ) 
 
     return 0
 
 if __name__ == "__main__":
-    exit(main())
+    exit(asyncio.run(main()))

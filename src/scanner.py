@@ -16,61 +16,78 @@ class CodeType(enum.Enum):
 class CodeResult:
     data: bytes
     type: CodeType
-    _bounds_tl: tuple[int, int]
-    _bounds_tr: tuple[int, int]
-    _bounds_br: tuple[int, int]
-    _bounds_bl: tuple[int, int]
+    _bounding_points: list[tuple[int, int]] = dataclasses.field(default_factory=list)
 
     def draw_bounds(self, image: cv2.typing.MatLike, color: tuple[int, int, int], thickness: int) -> None:
         """
         Draws the bounds of the detected code on the provided opencv buffer.
         """
-        cv2.line(
-            image,
-            self._bounds_tl, self._bounds_tr,
-            color, thickness
-        )
-        cv2.line(
-            image,
-            self._bounds_tr, self._bounds_br,
-            color, thickness
-        )
-        cv2.line(
-            image,
-            self._bounds_br, self._bounds_bl,
-            color, thickness
-        )
-        cv2.line(
-            image,
-            self._bounds_bl, self._bounds_tl,
-            color, thickness
-        )
-
-
-def scan_for_codes(frame: cv2.typing.MatLike) -> list[CodeResult]:
-    """
-    detects various codes on a frame and returns a list of them
-    """
-    results: CodeResult = []
-
-    # check for a data matrices
-    barcodes_2d: list[pylibdmtx.Decoded] = pylibdmtx.decode(
-        frame,
-        timeout=100,
-        max_count=1,
-        threshold=50
-    )
-    if barcodes_2d:
-        print(barcodes_2d)
-        for code in barcodes_2d:
-            rect: pylibdmtx.Rect = code.rect
-            results.append(CodeResult(
-                code.data,
-                CodeType.DATAMATRIX_2D,
-                (rect.left, rect.top),
-                (rect.left + rect.width, rect.top),
-                (rect.left + rect.width, rect.top + rect.height),
-                (rect.left, rect.top + rect.height)
-            ))
+        # don't draw if there is only one point, as that is "pointless"
+        if len(self._bounding_points) < 2:
+            return
         
-    return results
+        for index, point_b in enumerate(self._bounding_points):
+            point_a = self._bounding_points[index - 1]
+            cv2.line(
+                image,
+                point_a, point_b,
+                color, thickness
+            )
+
+
+class Scanner:
+    def __init__(self) -> None:
+        self.check_datamatrix_2d = True
+        self.check_barcode_1d = True
+        self.check_qr_code = False
+
+    def scan_for_codes(self, frame: cv2.typing.MatLike) -> list[CodeResult]:
+        """
+        detects various codes on a frame and returns a list of them
+        """
+        results: CodeResult = []
+
+        if self.check_datamatrix_2d:
+            # check for a data matrices
+            barcodes_2d: list[pylibdmtx.Decoded] = pylibdmtx.decode(
+                frame,
+                timeout=100,
+                max_count=2,
+                threshold=50
+            )
+            if barcodes_2d:
+                #print(barcodes_2d)
+                for code in barcodes_2d:
+                    # transform coordinates a bit because top is measured from bottom for some reason
+                    rect = pylibdmtx.Rect(
+                        left=code.rect.left,
+                        top=frame.shape[:2][0] - code.rect.top,
+                        height=code.rect.height,
+                        width=code.rect.width
+                    )
+                    results.append(CodeResult(
+                        code.data,
+                        CodeType.DATAMATRIX_2D,
+                        [
+                            (rect.left, rect.top),
+                            (rect.left + rect.width, rect.top),
+                            (rect.left + rect.width, rect.top - rect.height),
+                            (rect.left, rect.top - rect.height)
+                        ]
+                    ))
+        
+        if self.check_barcode_1d:
+            barcodes_1d: list[pyzbar.Decoded] = pyzbar.decode(frame)
+            if barcodes_1d:
+                #print(barcodes_1d)
+                for code in barcodes_1d:
+                    if code.type != "CODE128":
+                        print(f"Unexpected barcode scheme: {code.type}")
+                    rect: pylibdmtx.Rect = code.rect
+                    results.append(CodeResult(
+                        code.data,
+                        CodeType.BARCODE_128,
+                        [(p.x, p.y) for p in code.polygon]
+                    ))
+            
+        return results

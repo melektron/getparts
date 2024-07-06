@@ -13,12 +13,13 @@ from pylibdmtx import pylibdmtx
 import cv2, codecs
 import numpy as np
 import getparts
+import src.api_keys
 
 app_credentials= {
     'code': 'AAA',
     'client_id': "BBB",
     'client_secret': "CCC",
-    'mouser_key': "DDD"
+    'mouser_key': src.api_keys.MOUSER_API_KEY
 }
 
 # initialize barcode_api with our API credentials
@@ -48,7 +49,7 @@ while True:
     # read frame from webcam
     _,frame2 = vs.read()
     # check for a data matrix barcode
-    barcodes = pylibdmtx.decode(frame2,timeout=10)
+    barcodes = pylibdmtx.decode(frame2,timeout=10, threshold=50)
     if barcodes:
         code=True
     # if no data matrix, check for any other barcodes
