@@ -1,7 +1,7 @@
 
 import cv2
 import asyncio
-from concurrent.futures import ProcessPoolExecutor
+from PIL import Image
 
 from src.ui import MainWindow
 from src.video_source import VideoSource
@@ -36,10 +36,8 @@ async def image_pipeline() -> None:
                 info = await request_part_info_mouser(result.data)
                 if info is not None:
                     window.set_part_info(info)
-                    if info.image is not None:
-                        window.set_part_image(info.image)
 
-        window.set_camera_image(frame)
+        window.set_camera_image(Image.fromarray(frame))
         await asyncio.sleep(0.02)
 
 async def main() -> int:

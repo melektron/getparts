@@ -2,11 +2,17 @@
 from typing import Tuple, Any
 import customtkinter as ctk
 import webbrowser
-import cv2
+import os
+from pathlib import Path
 import asyncio
 from PIL import Image
 
 from .partinfo import PartInfo
+
+
+CAMERA_SIZE = (640, 360)
+PART_IMAGE_SIZE = (150, 150)    # should be the native size for mouser, and also fits nicely in UI
+
 
 class InfoField:
     def __init__(
@@ -104,15 +110,24 @@ class InfoField:
                 sticky="E",
                 pady=self._pady
             )
-    
+
     def copy_to_clipboard(self) -> None:
-        self._master.clipboard_append(self._value_entry.get())
+        if isinstance(self._value_entry, ctk.CTkTextbox):
+            self._master.clipboard_clear()
+            self._master.clipboard_append(self._value_entry.get(1.0, ctk.END))
+        else:
+            self._master.clipboard_clear()
+            self._master.clipboard_append(self._value_entry.get())
+
         if self._clipboard_button is not None:
             self._clipboard_button.configure(image=self._checkmark_icon)
             self._clipboard_button.after(1000, lambda: self._clipboard_button.configure(image=self._clipboard_icon))
     
     def open_in_browser(self) -> None:
-        webbrowser.open(self._value_entry.get())
+        if isinstance(self._value_entry, ctk.CTkTextbox):
+            webbrowser.open(self._value_entry.get(1.0, ctk.END))
+        else:
+            webbrowser.open(self._value_entry.get())
     
     def set_value(self, val: Any) -> None:
         if isinstance(self._value_entry, ctk.CTkTextbox):
@@ -127,6 +142,10 @@ class MainWindow(ctk.CTk):
     def __init__(self, fg_color: str | Tuple[str, str] | None = None, **kwargs):
         super().__init__(fg_color, **kwargs)
 
+        self.resizable(False, False)
+        self.title("Mouser GetPart")
+        #ctk.set_appearance_mode("light")
+
         self._camera_label = ctk.CTkLabel(self, text="")
         self._camera_label.grid(
             row=0,
@@ -135,18 +154,36 @@ class MainWindow(ctk.CTk):
             padx=10,
             pady=10
         )
+        self.set_camera_image(Image.new("RGB", CAMERA_SIZE, (0, 0, 0)))
         
         self._part_image_label = ctk.CTkLabel(self, text="")
         self._part_image_label.grid(
             row=1,
-            rowspan=4,
+            rowspan=5,
             column=1,
             padx=10,
             pady=10,
-            sticky="NE"
+            sticky="NSE"
         )
-        
-        #ctk.set_appearance_mode("light")
+        self.set_part_image(Image.new("RGB", PART_IMAGE_SIZE, (0, 0, 0)))
+
+        self._video_source_label = ctk.CTkLabel(
+            self, 
+            text="Video source:"
+        )
+        self._video_source_label.grid(
+            row=1, column=0, sticky="W", padx=10, pady=5
+        )
+        self._video_source = ctk.StringVar(self, "91")
+        self._video_source_entry = ctk.CTkEntry(
+            self,
+            width=370,
+            textvariable=self._video_source,
+            state="normal"
+        )
+        self._video_source_entry.grid(
+            row=1, column=0, sticky="E", padx=10, pady=5,
+        )
 
         self._enable_datamatrix = ctk.BooleanVar(self, True)
         self._enable_datamatrix_check = ctk.CTkCheckBox(
@@ -154,7 +191,7 @@ class MainWindow(ctk.CTk):
             onvalue=True, offvalue=False, variable=self._enable_datamatrix
         )
         self._enable_datamatrix_check.grid(
-            row=1, column=0, padx=10, pady=10, sticky="W"
+            row=2, column=0, padx=10, pady=5, sticky="W"
         )
 
         self._enable_barcode_128 = ctk.BooleanVar(self, False)
@@ -163,7 +200,7 @@ class MainWindow(ctk.CTk):
             onvalue=True, offvalue=False, variable=self._enable_barcode_128
         )
         self._enable_barcode_128_check.grid(
-            row=2, column=0, padx=10, sticky="W"
+            row=3, column=0, padx=10, pady=5, sticky="W"
         )
 
         self._enable_qrcode = ctk.BooleanVar(self, False)
@@ -172,18 +209,37 @@ class MainWindow(ctk.CTk):
             onvalue=True, offvalue=False, variable=self._enable_qrcode
         )
         self._enable_qrcode_check.grid(
-            row=3, column=0, padx=10, pady=10, sticky="W"
+            row=4, column=0, padx=10, pady=5, sticky="W"
+        )
+
+        self._image_path_label = ctk.CTkLabel(
+            self, 
+            text="Save folder: "
+        )
+        self._image_path_label.grid(
+            row=5, column=0, sticky="W", padx=10, pady=5
+        )
+        self._image_save_path = ctk.StringVar(self, str(Path.home() / "Pictures/components"))
+        self._image_path_entry = ctk.CTkEntry(
+            self,
+            width=370,
+            textvariable=self._image_save_path,
+            state="normal"
+        )
+        self._image_path_entry.grid(
+            row=5, column=0, sticky="E", padx=10, pady=5,
         )
 
         self._data_frame = ctk.CTkFrame(self, width=640)
         self._data_frame.grid(
-            row=0, rowspan=5,
+            row=0, rowspan=6,
             column=2,
             padx=10, pady=10,
             sticky="NSEW"
         )
 
-        self.rowconfigure(4, weight=1)
+        self.rowconfigure(5, weight=1)
+        self.columnconfigure(0, weight=1)
 
         self._part_info_label = ctk.CTkLabel(
             self._data_frame, 
@@ -237,26 +293,18 @@ class MainWindow(ctk.CTk):
             self.update()
             await asyncio.sleep(0.02)
     
-    def set_camera_image(self, imgarr: cv2.typing.MatLike) -> None:
-        if self.exited:
-            return
-        
-        img = Image.fromarray(imgarr)
+    def set_camera_image(self, img: Image.Image) -> None:
         img_ctk = ctk.CTkImage(
             light_image=img,
-            size=(640, 360)
+            size=CAMERA_SIZE
         )
         self._camera_label.configure(image=img_ctk)
 
-    def set_part_image(self, img: Image.Image) -> None:
-        if self.exited:
-            return
-        
+    def set_part_image(self, img: Image.Image) -> None:    
         img_ctk = ctk.CTkImage(
             light_image=img,
-            size=(150, 150)
+            size=PART_IMAGE_SIZE
         )
-        print(f"{img.size=}")
         self._part_image_label.configure(image=img_ctk)
     
     def set_part_info(self, info: PartInfo) -> None:
@@ -271,3 +319,12 @@ class MainWindow(ctk.CTk):
         self._field_price_breaks.set_value("\n".join(f"{item.quantity}:\t{item.price:.03f} {info.currency}" for item in info.price_breaks))
         self._field_packaging_options.set_value(", ".join(info.packaging_options))
         self._field_details_url.set_value(info.details_url)
+        if info.image is not None:
+            self.set_part_image(info.image)
+            save_folder = self._image_save_path.get()
+            if save_folder == "":
+                return  # user doesn't want to save images
+            save_path = os.path.join(save_folder, info.image_url.split("/")[-1])
+            print(f"saving to: {save_path}")
+            info.image.save(save_path)
+    
