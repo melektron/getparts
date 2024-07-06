@@ -49,6 +49,7 @@ class Scanner:
 
         if self.check_datamatrix_2d:
             # check for a data matrices
+            # https://stackoverflow.com/questions/66377973/how-to-improve-pylibdmtx-performance
             barcodes_2d: list[pylibdmtx.Decoded] = pylibdmtx.decode(
                 frame,
                 timeout=100,
