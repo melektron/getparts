@@ -7,13 +7,12 @@ M.Holliday
 '''
 
 from pyzbar import pyzbar
+# For this to work with Python3.12 we need to manually patch it to remove the disutils dependency according to this pr:
+# https://github.com/NaturalHistoryMuseum/pylibdmtx/pull/90 (because the lib seems to not be well maintained)
 from pylibdmtx import pylibdmtx
-import time
 import cv2, codecs
 import numpy as np
 import getparts
-import os.path 
-from os import path
 
 app_credentials= {
     'code': 'AAA',
@@ -38,9 +37,11 @@ poly=np.array([[[0,0],[0,0],[0,0],[0,0]]],np.int32)
 
 # initialize the video stream and allow the camera sensor to warm up
 print("Starting video stream...")
+#vs=cv2.VideoCapture("http://192.168.1.69/live")#91)
 vs=cv2.VideoCapture(91)
 if vs is None or not vs.isOpened():
     raise TypeError('Error starting video stream\n\n')
+#vs.set(cv2.CAP_PROP_BUFFERSIZE, 2)
 
 while True:
     code=False
