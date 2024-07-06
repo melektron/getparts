@@ -38,7 +38,7 @@ poly=np.array([[[0,0],[0,0],[0,0],[0,0]]],np.int32)
 
 # initialize the video stream and allow the camera sensor to warm up
 print("Starting video stream...")
-vs=cv2.VideoCapture(0)
+vs=cv2.VideoCapture(91)
 if vs is None or not vs.isOpened():
     raise TypeError('Error starting video stream\n\n')
 
@@ -71,7 +71,7 @@ while True:
             # if we haven't seen this barcode this session, add it to our list
             if barcodeData not in found:
                 state='Found'
-                found.add(barcodeData)
+                #found.add(barcodeData)
                 print(barcodeData.decode())
                 # query the barcode_api.py for barcode
                 result = api.search(item,product_info=False)
