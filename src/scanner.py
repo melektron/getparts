@@ -38,7 +38,7 @@ class CodeResult:
 class Scanner:
     def __init__(self) -> None:
         self.check_datamatrix_2d = True
-        self.check_barcode_1d = True
+        self.check_barcode_128 = True
         self.check_qr_code = False
 
     def scan_for_codes(self, frame: cv2.typing.MatLike) -> list[CodeResult]:
@@ -76,17 +76,27 @@ class Scanner:
                         ]
                     ))
         
-        if self.check_barcode_1d:
-            barcodes_1d: list[pyzbar.Decoded] = pyzbar.decode(frame)
-            if barcodes_1d:
-                #print(barcodes_1d)
-                for code in barcodes_1d:
-                    if code.type != "CODE128":
+        if self.check_barcode_128 or self.check_qr_code:
+            barcodes: list[pyzbar.Decoded] = pyzbar.decode(frame)
+            if barcodes:
+                #print(barcodes)
+                for code in barcodes:
+                    schema: CodeType = ...
+                    if code.type == "CODE128":
+                        schema = CodeType.BARCODE_128
+                        if not self.check_barcode_128:
+                            continue
+                    elif code.type == "QRCODE":
+                        schema = CodeType.QR_CODE
+                        if not self.check_qr_code:
+                            continue
+                    else:
                         print(f"Unexpected barcode scheme: {code.type}")
+                        
                     rect: pylibdmtx.Rect = code.rect
                     results.append(CodeResult(
                         code.data,
-                        CodeType.BARCODE_128,
+                        schema,
                         [(p.x, p.y) for p in code.polygon]
                     ))
             
