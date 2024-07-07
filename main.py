@@ -9,10 +9,8 @@ from src.img_process import async_pipe_recv, image_process, WorkerCommand, Worke
 FRAME_RATE = 30 
 FRAME_TIME = int(1000 / FRAME_RATE)
 
-window = MainWindow()
 
-
-async def image_pipeline() -> None:
+async def image_pipeline(window: MainWindow) -> None:
     # start image worker
     main_pipe, worker_pipe = mp.Pipe(duplex=True)
     process = mp.Process(target=image_process, args=(worker_pipe,))
@@ -50,9 +48,11 @@ async def image_pipeline() -> None:
 
 
 async def main() -> int:
+    window = MainWindow()
+
     await asyncio.gather(
         window.run(),
-        image_pipeline()
+        image_pipeline(window)
     )
     return 0
 
