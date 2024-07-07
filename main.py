@@ -21,7 +21,7 @@ async def image_pipeline() -> None:
     last_code: bytes = ""
 
     while not window.exited:
-        frame_raw = camera.get_frame()
+        frame_raw = camera.get_frame(window.video_source)
         frame = cv2.cvtColor(frame_raw, cv2.COLOR_BGR2RGB)
 
         scanner.check_datamatrix_2d = window.enable_datamatrix

@@ -174,13 +174,16 @@ class MainWindow(ctk.CTk):
         self._video_source_label.grid(
             row=1, column=0, sticky="W", padx=10, pady=5
         )
-        self._video_source = ctk.StringVar(self, "91")
+        self._video_source_strvar = ctk.StringVar(self, "91")
+        self._video_source_accepted: str = self._video_source_strvar.get()
         self._video_source_entry = ctk.CTkEntry(
             self,
             width=370,
-            textvariable=self._video_source,
-            state="normal"
+            textvariable=self._video_source_strvar,
+            state="normal",
         )
+        self._video_source_entry.bind("<Return>", self._accept_video_source)
+        self._video_source_entry.bind("<FocusOut>", self._accept_video_source)
         self._video_source_entry.grid(
             row=1, column=0, sticky="E", padx=10, pady=5,
         )
@@ -287,6 +290,12 @@ class MainWindow(ctk.CTk):
     def enable_qrcode(self) -> bool:
         return self._enable_qrcode.get()
     
+    @property
+    def video_source(self) -> str:
+        return self._video_source_accepted
+    
+    def _accept_video_source(self, _) -> None:
+        self._video_source_accepted = self._video_source_strvar.get()
 
     async def run(self) -> None:
         while not self.exited:
@@ -294,8 +303,15 @@ class MainWindow(ctk.CTk):
             await asyncio.sleep(0.02)
     
     def set_camera_image(self, img: Image.Image) -> None:
+        # rescale image so it fits in camera preview size without distortion
+        img.thumbnail(size=CAMERA_SIZE) 
+        w, h = img.size
+        # paste it in the center of the actual preview area, leaving the rest black
+        background = Image.new("RGB", CAMERA_SIZE, "black")
+        background.paste(img, ((CAMERA_SIZE[0] - w) // 2, (CAMERA_SIZE[1] - h) // 2))
+        # convert to CTkImage to allow DPI rescaling and show on label
         img_ctk = ctk.CTkImage(
-            light_image=img,
+            light_image=background,
             size=CAMERA_SIZE
         )
         self._camera_label.configure(image=img_ctk)
