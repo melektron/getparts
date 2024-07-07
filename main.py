@@ -1,52 +1,59 @@
 
-import cv2
 import asyncio
-from PIL import Image
+import multiprocessing as mp
 
 from src.ui import MainWindow
-from src.video_source import VideoSource
-from src.scanner import Scanner, CodeType
-from src.partinfo import request_part_info_mouser
+from src.img_process import async_pipe_recv, image_process, WorkerCommand, WorkerResponse
 
 
 FRAME_RATE = 30 
 FRAME_TIME = int(1000 / FRAME_RATE)
 
-
 window = MainWindow()
-camera = VideoSource()
-scanner = Scanner()
+
 
 async def image_pipeline() -> None:
-    last_code: bytes = ""
+    # start image worker
+    main_pipe, worker_pipe = mp.Pipe(duplex=True)
+    process = mp.Process(target=image_process, args=(worker_pipe,))
+    process.start()
 
     while not window.exited:
-        frame_raw = camera.get_frame(window.video_source)
-        frame = cv2.cvtColor(frame_raw, cv2.COLOR_BGR2RGB)
+        main_pipe.send(WorkerCommand(
+            exit=False, 
+            video_source=window.video_source, 
+            enable_datamatrix=window.enable_datamatrix,
+            enable_barcode_128=window.enable_barcode_128,
+            enable_qrcode=window.enable_qrcode
+        ))
 
-        scanner.check_datamatrix_2d = window.enable_datamatrix
-        scanner.check_barcode_128 = window.enable_barcode_128
-        scanner.check_qr_code = window.enable_qrcode
-        found_codes = scanner.scan_for_codes(frame)
-        for result in found_codes:
-            result.draw_bounds(frame, (0, 255, 0), 2)
-            # only fetch if we got a different datamatrix than the last one we already fetched
-            if result.type == CodeType.DATAMATRIX_2D and last_code != result.data:
-                last_code = result.data
-                info = await request_part_info_mouser(result.data)
-                if info is not None:
-                    window.set_part_info(info)
+        resp = await async_pipe_recv(main_pipe)
+        if not isinstance(resp, WorkerResponse):
+            print("Invalid worker response, commanding process exit")
+            break
 
-        window.set_camera_image(Image.fromarray(frame))
+        window.set_camera_image(resp.frame)
+        if resp.part_info is not None:
+            window.set_part_info(resp.part_info)
+
         await asyncio.sleep(0.02)
+    
+    # tell process to stop
+    main_pipe.send(WorkerCommand(
+        exit=True, 
+        video_source="", 
+        enable_datamatrix=False,
+        enable_barcode_128=False,
+        enable_qrcode=False
+    ))
+    process.join()
+
 
 async def main() -> int:
-
     await asyncio.gather(
         window.run(),
         image_pipeline()
-    ) 
-
+    )
     return 0
 
 if __name__ == "__main__":

@@ -303,6 +303,7 @@ class MainWindow(ctk.CTk):
             await asyncio.sleep(0.02)
     
     def set_camera_image(self, img: Image.Image) -> None:
+        # https://stackoverflow.com/a/44231728
         # rescale image so it fits in camera preview size without distortion
         img.thumbnail(size=CAMERA_SIZE) 
         w, h = img.size
@@ -341,6 +342,6 @@ class MainWindow(ctk.CTk):
             if save_folder == "":
                 return  # user doesn't want to save images
             save_path = os.path.join(save_folder, info.image_url.split("/")[-1])
-            print(f"saving to: {save_path}")
+            print(f"Saving image to: {save_path}")
             info.image.save(save_path)
     
