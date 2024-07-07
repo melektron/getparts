@@ -1,5 +1,12 @@
+"""
+ELEKTRON (c) 2024 - now
+Written by melektron
+www.elektron.work
+06.07.24 11:51
 
-import json 
+API part info getters
+"""
+
 import dataclasses
 import requests
 from PIL import Image

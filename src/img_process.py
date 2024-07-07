@@ -1,3 +1,11 @@
+"""
+ELEKTRON (c) 2024 - now
+Written by melektron
+www.elektron.work
+06.07.24 11:51
+
+Image processing worker process
+"""
 
 from multiprocessing.connection import Connection
 import asyncio

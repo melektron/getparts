@@ -1,3 +1,4 @@
 .venv*
 api_keys.py
 __pycache__
+barcodes.txt

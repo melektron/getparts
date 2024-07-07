@@ -1,3 +1,11 @@
+"""
+ELEKTRON (c) 2024 - now
+Written by melektron
+www.elektron.work
+06.07.24 11:51
+
+GetParts GUI
+"""
 
 from typing import Tuple, Any
 import customtkinter as ctk
@@ -143,7 +151,7 @@ class MainWindow(ctk.CTk):
         super().__init__(fg_color, **kwargs)
 
         self.resizable(False, False)
-        self.title("Mouser GetPart")
+        self.title("Mouser GetParts")
         #ctk.set_appearance_mode("light")
 
         self._camera_label = ctk.CTkLabel(self, text="")

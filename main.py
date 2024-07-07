@@ -1,3 +1,12 @@
+"""
+ELEKTRON (c) 2024 - now
+Written by melektron
+www.elektron.work
+06.07.24 11:51
+
+UI Application for scanning Mouser Labels and downloading part info from the mouser API
+inspired by maholli/getparts.
+"""
 
 import asyncio
 import multiprocessing as mp
