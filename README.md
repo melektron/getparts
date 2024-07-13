@@ -81,7 +81,7 @@ brew install zbar
 sudo apt install libzbar0
 ```
 
-Then, create a python virtual environment and run the application inside it:
+Then, create a python virtual environment and install dependencies:
 
 ```bash
 # pwd = getparts
@@ -90,7 +90,13 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 # install dependencies
 pip install -r requirements.txt
+```
 
+Unfortunately, pylibdmtx currently doesn't support Python 3.12 and relies on the "distutils" package which was finally removed in 3.12. For now, the quickest solution for this is manually patching this out of the installed package in the venv. To do so, simply manually patch the one library file where the errors occur (you will see them when trying to launch GetParts) according to this PR on the official pylibdmtx repo: https://github.com/NaturalHistoryMuseum/pylibdmtx/pull/90/files. In the future this might get merged and no longer be required.
+
+Now, you finally can just run the application:
+
+```bash
 # run application
 python main.py
 ```
