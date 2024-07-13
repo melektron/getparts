@@ -72,7 +72,7 @@ On Linux and MacOS you may also need to install the detection libraries using yo
 # on macos
 brew install libdmtx
 # on debian based
-sudo apt isntall libdmtx0a
+sudo apt install libdmtx0a
 
 # libzbar (see https://pypi.org/project/pyzbar/)
 # on macos
