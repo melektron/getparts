@@ -32,7 +32,7 @@ class PartInfo:
     price_breaks: list[PriceStep]
     packaging_options: list[str]
     details_url: str
-    image_url: str
+    image_url: str | None
     image: Image.Image | None = None
 
 
@@ -108,7 +108,11 @@ def request_part_info_mouser(code_data: bytes) -> PartInfo | None:
         image_url=                  part_descriptor["ImagePath"]
     )
 
-    # also fetch the image
+    # also fetch the image if available
+    if part_info.image_url is None:
+        part_info.image = None
+        return part_info
+    
     response: requests.Response = requests.get(
         url=part_info.image_url,
         headers={
