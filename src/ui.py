@@ -347,11 +347,9 @@ class MainWindow(ctk.CTk):
     
     def _on_mouse_click_frame(self, *_):
         if self._current_hovered_code is not None:
-            print(f"select {self._current_hovered_code.data}")
             self._currently_selected_code = self._current_hovered_code
             self._request_analyse_code(self._currently_selected_code)
         else:
-            print("deselect")
             self._currently_selected_code = None
     
     def _to_ui_coords(self, point: tuple[int, int]) -> tuple[int, int]:
@@ -496,9 +494,16 @@ class MainWindow(ctk.CTk):
         else:
             self._set_part_image(Image.new("RGB", PART_IMAGE_SIZE, (0, 0, 0)))
     
-    def _set_part_image(self, img: Image.Image) -> None:    
+    def _set_part_image(self, img: Image.Image) -> None:
+        img.thumbnail(size=PART_IMAGE_SIZE) 
+        ui_w, ui_h = img.size
+        
+        # paste it in the center of the actual view area, leaving the rest black
+        background = Image.new("RGB", PART_IMAGE_SIZE, "black")
+        background.paste(img, ((PART_IMAGE_SIZE[0] - ui_w) // 2, (PART_IMAGE_SIZE[1] - ui_h) // 2))
+
         img_ctk = ctk.CTkImage(
-            light_image=img,
+            light_image=background,
             size=PART_IMAGE_SIZE
         )
         self._part_image_label.configure(image=img_ctk)
