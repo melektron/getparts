@@ -191,6 +191,7 @@ class MainWindow(ctk.CTk):
         self._camera_label.bind("<Motion>", self._on_mouse_move_in_frame)
         self._camera_label.bind("<Button-1>", self._on_mouse_click_frame)
         self.set_scanning_results(numpy.array(Image.new("RGB", CAMERA_SIZE, (0, 0, 0))), [])
+        self._request_task: asyncio.Task | None = None
         
         self._part_image_label = ctk.CTkLabel(self, text="")
         self._part_image_label.grid(
@@ -407,10 +408,9 @@ class MainWindow(ctk.CTk):
         # get that as opencv image to allow drawing
         canvas: cv2.typing.MatLike = numpy.array(background)
 
-        # draw detection mode
+        # prepare detection mode drawing (happens last)
         mode_text = "Manual" if self._currently_selected_code is not None else "Auto"
         mode_color = (10, 60, 255) if self._currently_selected_code is not None else (0, 255, 0)
-        cv2.putText(canvas, f"Detection: {mode_text}", (10, 20), cv2.QT_FONT_NORMAL, 0.5, mode_color, 1, cv2.LINE_AA)
 
         # draw codes
         self._current_hovered_code = None   # reset
@@ -437,6 +437,9 @@ class MainWindow(ctk.CTk):
             self._camera_label.configure(cursor="arrow")
             self._code_tooltip.hide()
 
+        # draw detection mode last to not be overlapped by any code borders
+        cv2.putText(canvas, f"Detection: {mode_text}", (10, 20), cv2.QT_FONT_NORMAL, 0.5, mode_color, 1, cv2.LINE_AA)
+
         # convert to CTkImage to allow DPI rescaling and show on label
         img_ctk = ctk.CTkImage(
             light_image=Image.fromarray(canvas),
@@ -445,14 +448,29 @@ class MainWindow(ctk.CTk):
         self._camera_label.configure(image=img_ctk)
     
     def _request_analyse_code(self, code: CodeResult) -> None:
+        # don't start multiple requests
+        if self._request_task is not None:
+            return
+        
         # don't re-analyze previous codes
         if self._currently_displayed_code is not None and self._currently_displayed_code.data == code.data:
             return
         self._currently_displayed_code = code
 
-        # query data from mouser TODO: make async
-        info = request_part_info_mouser(code.data)
-        self._set_part_info(info)
+        # change text to indicate request started
+        self._part_info_label.configure(text="Searching...")
+
+        # start request in background
+        async def bg_request():
+            info = await request_part_info_mouser(code.data)
+            self._set_part_info(info)
+        self._request_task = asyncio.Task(bg_request())
+
+        # clean up after done
+        def complete(*_):
+            self._request_task = None
+        self._request_task.add_done_callback(complete)
+
 
     def _set_part_info(self, info: PartInfo | None) -> None:
         if info is None:
