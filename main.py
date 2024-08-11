@@ -10,10 +10,10 @@ inspired by maholli/getparts.
 
 import asyncio
 import multiprocessing as mp
+from PIL import Image
 
 from src.ui import MainWindow
 from src.img_process import async_pipe_recv, image_process, WorkerCommand, WorkerResponse
-
 
 FRAME_RATE = 30 
 FRAME_TIME = int(1000 / FRAME_RATE)
@@ -38,10 +38,8 @@ async def image_pipeline(window: MainWindow) -> None:
         if not isinstance(resp, WorkerResponse):
             print("Invalid worker response, commanding process exit")
             break
-
-        window.set_camera_image(resp.frame)
-        if resp.part_info is not None:
-            window.set_part_info(resp.part_info)
+            
+        window.set_scanning_results(resp.frame, resp.found_codes)
 
         await asyncio.sleep(0.02)
     

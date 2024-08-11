@@ -37,15 +37,16 @@ class PartInfo:
 
 
 def request_part_info_mouser(code_data: bytes) -> PartInfo | None:
+    mouser_part_number: bytes = ...
     # extract manufacturer part number from EICA code
-    if not b'[)>' in code_data:
-        print("Invalid code, returning None")
-        return None
-    
-    code_components = code_data.split(r"".encode())
-    # 3rd component is supplier part number, except the first two character which define the component
-    mouser_part_number = code_components[3][2:]
-    print(f"{mouser_part_number=}")
+    if b'[)>' in code_data:
+        code_components = code_data.split(r"".encode())
+        # 3rd component is supplier part number, except the first two character which define the component
+        mouser_part_number = code_components[3][2:]
+    else:
+        print("Not an EICA code, attempting to use directly")
+        mouser_part_number = code_data
+        print(f"{mouser_part_number=}")
     
     part_info: PartInfo = ...
 

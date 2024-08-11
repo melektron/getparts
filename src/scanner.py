@@ -11,8 +11,10 @@ from pyzbar import pyzbar
 # For this to work with Python3.12 we need to manually patch it to remove the disutils dependency according to this pr:
 # https://github.com/NaturalHistoryMuseum/pylibdmtx/pull/90 (because the lib seems to not be well maintained)
 from pylibdmtx import pylibdmtx
+from typing import Callable
 import enum
 import cv2
+import numpy
 import dataclasses
 
 class CodeType(enum.Enum):
@@ -24,23 +26,38 @@ class CodeType(enum.Enum):
 class CodeResult:
     data: bytes
     type: CodeType
-    _bounding_points: list[tuple[int, int]] = dataclasses.field(default_factory=list)
+    bounding_points: list[tuple[int, int]] = dataclasses.field(default_factory=list)
 
-    def draw_bounds(self, image: cv2.typing.MatLike, color: tuple[int, int, int], thickness: int) -> None:
+    def draw_bounds(
+        self, 
+        image: cv2.typing.MatLike, 
+        color: tuple[int, int, int], 
+        thickness: int, 
+        coord_converter: Callable[[tuple[int, int]], tuple[int, int]] = lambda a: a
+    ) -> None:
         """
         Draws the bounds of the detected code on the provided opencv buffer.
         """
         # don't draw if there is only one point, as that is "pointless"
-        if len(self._bounding_points) < 2:
+        if len(self.bounding_points) < 2:
             return
         
-        for index, point_b in enumerate(self._bounding_points):
-            point_a = self._bounding_points[index - 1]
+        for index, point_b in enumerate(self.bounding_points):
+            point_a = self.bounding_points[index - 1]
             cv2.line(
                 image,
-                point_a, point_b,
-                color, thickness
+                coord_converter(point_a), coord_converter(point_b),
+                color, thickness, cv2.LINE_AA
             )
+    
+    def check_in_bounds(self, point: tuple[int, int]) -> bool:
+        """
+        Returns true if the point is withing the bounds of the code polygon
+        """
+        pts = numpy.array(self.bounding_points, numpy.int32)
+        pts.reshape((-1, 1, 2))
+        a = cv2.pointPolygonTest(pts, (float(point[0]), float(point[1])), False)
+        return a >= 0
 
 
 class Scanner:

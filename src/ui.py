@@ -9,13 +9,19 @@ GetParts GUI
 
 from typing import Tuple, Any
 import customtkinter as ctk
+import tkinter as tk
+import tktooltip
 import webbrowser
 import os
+import cv2
+import numpy
 from pathlib import Path
 import asyncio
 from PIL import Image
 
 from .partinfo import PartInfo
+from .scanner import CodeResult, CodeType
+from src.partinfo import request_part_info_mouser, PartInfo
 
 
 CAMERA_SIZE = (640, 360)
@@ -162,7 +168,29 @@ class MainWindow(ctk.CTk):
             padx=10,
             pady=10
         )
-        self.set_camera_image(Image.new("RGB", CAMERA_SIZE, (0, 0, 0)))
+        # tooltip for the frame which will be modified
+        self._code_tooltip = tktooltip.ToolTip(self._camera_label, "", refresh=0.2)
+        self._code_tooltip.hide()
+
+        # prepare complex functionality of camera label
+        self._current_input_image: cv2.typing.MatLike = ...
+        self._current_codes: list[CodeResult] = []
+        self._current_hovered_code: CodeResult | None = None
+        self._currently_selected_code: CodeResult | None = None
+        self._currently_displayed_code: CodeResult | None = None
+        self._current_mouse_x_ui: int = 0
+        self._current_mouse_y_ui: int = 0
+        self._current_mouse_x_image: int = 0
+        self._current_mouse_y_image: int = 0
+        self._ui_to_image_offsets: tuple[int, int] = (0, 0)
+        self._ui_to_image_coordinate_factor: float = 1.0
+        self._mouse_in_frame: bool = False
+        # register events to track mouse
+        self._camera_label.bind("<Enter>", self._on_mouse_enter_frame)
+        self._camera_label.bind("<Leave>", self._on_mouse_leave_frame)
+        self._camera_label.bind("<Motion>", self._on_mouse_move_in_frame)
+        self._camera_label.bind("<Button-1>", self._on_mouse_click_frame)
+        self.set_scanning_results(numpy.array(Image.new("RGB", CAMERA_SIZE, (0, 0, 0))), [])
         
         self._part_image_label = ctk.CTkLabel(self, text="")
         self._part_image_label.grid(
@@ -173,7 +201,7 @@ class MainWindow(ctk.CTk):
             pady=10,
             sticky="NSE"
         )
-        self.set_part_image(Image.new("RGB", PART_IMAGE_SIZE, (0, 0, 0)))
+        self._set_part_image(Image.new("RGB", PART_IMAGE_SIZE, (0, 0, 0)))
 
         self._video_source_label = ctk.CTkLabel(
             self, 
@@ -254,7 +282,7 @@ class MainWindow(ctk.CTk):
 
         self._part_info_label = ctk.CTkLabel(
             self._data_frame, 
-            text="Part Info", 
+            text="No Results", 
             font=("Arial", 32),
             width=640
         )
@@ -301,38 +329,151 @@ class MainWindow(ctk.CTk):
     @property
     def video_source(self) -> str:
         return self._video_source_accepted
-    
+
     def _accept_video_source(self, _) -> None:
         self._video_source_accepted = self._video_source_strvar.get()
+
+    def _on_mouse_enter_frame(self, *_) -> None:
+        self._mouse_in_frame = True
+    def _on_mouse_leave_frame(self, *_) -> None:
+        self._mouse_in_frame = False
+    def _on_mouse_move_in_frame(self, e: tk.Event):
+        self._current_mouse_x_ui = e.x
+        self._current_mouse_y_ui = e.y
+        # convert to image coords and save
+        self._current_mouse_x_image = int((e.x - self._ui_to_image_offsets[0]) * self._ui_to_image_coordinate_factor)
+        self._current_mouse_y_image = int((e.y - self._ui_to_image_offsets[1]) * self._ui_to_image_coordinate_factor)
+        self._update_camera_view()
+    
+    def _on_mouse_click_frame(self, *_):
+        if self._current_hovered_code is not None:
+            print(f"select {self._current_hovered_code.data}")
+            self._currently_selected_code = self._current_hovered_code
+            self._request_analyse_code(self._currently_selected_code)
+        else:
+            print("deselect")
+            self._currently_selected_code = None
+    
+    def _to_ui_coords(self, point: tuple[int, int]) -> tuple[int, int]:
+        """ Converts input image coordinates from scanner to UI coordinates """
+        return (
+            int(point[0] / self._ui_to_image_coordinate_factor + self._ui_to_image_offsets[0]),
+            int(point[1] / self._ui_to_image_coordinate_factor + self._ui_to_image_offsets[1])
+        )
 
     async def run(self) -> None:
         while not self.exited:
             self.update()
             await asyncio.sleep(0.02)
     
-    def set_camera_image(self, img: Image.Image) -> None:
+    def set_scanning_results(self, img: cv2.typing.MatLike, codes: list[CodeResult]) -> None:
+        self._current_input_image = img
+        self._current_codes = codes
+        self._update_camera_view()
+
+        # if no code is manually selected, try to find automatically
+        if self._currently_selected_code is None:
+            for code in codes:
+                # request analysis of all datamatrixes
+                if code.type == CodeType.DATAMATRIX_2D:
+                    self._request_analyse_code(code)
+                # TODO: automatically option inventree codes
+                # others are ignored for now
+                else:
+                    pass
+    
+    def _get_hovered_code(self) -> CodeResult | None:
+        # assuming codes never overlap, get the first one that is hovered.
+        for code in self._current_codes:
+            if code.check_in_bounds((self._current_mouse_x_image, self._current_mouse_y_image)):
+                return code
+    
+    def _update_camera_view(self) -> None:
         # https://stackoverflow.com/a/44231728
         # rescale image so it fits in camera preview size without distortion
+        img = Image.fromarray(self._current_input_image)
+        real_w, real_h = img.size   # save original size
         img.thumbnail(size=CAMERA_SIZE) 
-        w, h = img.size
+        ui_w, ui_h = img.size
+        # calculate scaling factor and save it, so mouse handler can convert UI coordinates to image
+        # coordinates. Before the first frame after size changes (e.g. startup) the conversion might
+        # be wrong but for all following ones the correct factor is saved.
+        self._ui_to_image_coordinate_factor = real_w / ui_w
+        # also calculate how much the picture is shifted if aspect ratio is different
+        self._ui_to_image_offsets = ((CAMERA_SIZE[0] - ui_w) // 2, (CAMERA_SIZE[1] - ui_h) // 2)
+        
         # paste it in the center of the actual preview area, leaving the rest black
         background = Image.new("RGB", CAMERA_SIZE, "black")
-        background.paste(img, ((CAMERA_SIZE[0] - w) // 2, (CAMERA_SIZE[1] - h) // 2))
+        background.paste(img, self._ui_to_image_offsets)
+
+        # get that as opencv image to allow drawing
+        canvas: cv2.typing.MatLike = numpy.array(background)
+
+        # draw detection mode
+        mode_text = "Manual" if self._currently_selected_code is not None else "Auto"
+        mode_color = (10, 60, 255) if self._currently_selected_code is not None else (0, 255, 0)
+        cv2.putText(canvas, f"Detection: {mode_text}", (10, 20), cv2.QT_FONT_NORMAL, 0.5, mode_color, 1, cv2.LINE_AA)
+
+        # draw codes
+        self._current_hovered_code = None   # reset
+        for code in self._current_codes:
+            if (
+                code.check_in_bounds((self._current_mouse_x_image, self._current_mouse_y_image))
+                and self._mouse_in_frame
+            ):
+                code.draw_bounds(canvas, (255, 255, 0), 1, self._to_ui_coords)
+                self._current_hovered_code = code   # save code
+
+            elif self._currently_displayed_code is not None and self._currently_displayed_code.data == code.data:
+                code.draw_bounds(canvas, mode_color, 1, self._to_ui_coords)
+
+            else: 
+                code.draw_bounds(canvas, (255, 0, 0), 1, self._to_ui_coords)
+        
+        # if any code is hovered, set the cursor differently
+        if self._current_hovered_code is not None:
+            self._camera_label.configure(cursor="hand2")
+            self._code_tooltip.msg = self._current_hovered_code.data.decode()
+            self._code_tooltip.show()
+        else:
+            self._camera_label.configure(cursor="arrow")
+            self._code_tooltip.hide()
+
         # convert to CTkImage to allow DPI rescaling and show on label
         img_ctk = ctk.CTkImage(
-            light_image=background,
+            light_image=Image.fromarray(canvas),
             size=CAMERA_SIZE
         )
         self._camera_label.configure(image=img_ctk)
-
-    def set_part_image(self, img: Image.Image) -> None:    
-        img_ctk = ctk.CTkImage(
-            light_image=img,
-            size=PART_IMAGE_SIZE
-        )
-        self._part_image_label.configure(image=img_ctk)
     
-    def set_part_info(self, info: PartInfo) -> None:
+    def _request_analyse_code(self, code: CodeResult) -> None:
+        # don't re-analyze previous codes
+        if self._currently_displayed_code is not None and self._currently_displayed_code.data == code.data:
+            return
+        self._currently_displayed_code = code
+
+        # query data from mouser TODO: make async
+        info = request_part_info_mouser(code.data)
+        self._set_part_info(info)
+
+    def _set_part_info(self, info: PartInfo | None) -> None:
+        if info is None:
+            self._part_info_label.configure(text="No Results")
+            self._field_description.set_value("")
+            self._field_in_stock.set_value("")
+            self._field_min_qty.set_value("")
+            self._field_qty_multiples.set_value("")
+            self._field_manufacturer.set_value("")
+            self._field_manufacturer_part_number.set_value("")
+            self._field_supplier_part_number.set_value("")
+            self._field_currency.set_value("")
+            self._field_price_breaks.set_value("")
+            self._field_packaging_options.set_value("")
+            self._field_details_url.set_value("")
+            self._set_part_image(Image.new("RGB", PART_IMAGE_SIZE, (0, 0, 0)))
+            return
+        
+        self._part_info_label.configure(text="Part Info")
         self._field_description.set_value(info.description)
         self._field_in_stock.set_value(info.in_stock)
         self._field_min_qty.set_value(info.min_qty)
@@ -345,11 +486,19 @@ class MainWindow(ctk.CTk):
         self._field_packaging_options.set_value(", ".join(info.packaging_options))
         self._field_details_url.set_value(info.details_url)
         if info.image is not None:
-            self.set_part_image(info.image)
+            self._set_part_image(info.image)
             save_folder = self._image_save_path.get()
             if save_folder == "":
                 return  # user doesn't want to save images
             save_path = os.path.join(save_folder, info.image_url.split("/")[-1])
             print(f"Saving image to: {save_path}")
             info.image.save(save_path)
+        else:
+            self._set_part_image(Image.new("RGB", PART_IMAGE_SIZE, (0, 0, 0)))
     
+    def _set_part_image(self, img: Image.Image) -> None:    
+        img_ctk = ctk.CTkImage(
+            light_image=img,
+            size=PART_IMAGE_SIZE
+        )
+        self._part_image_label.configure(image=img_ctk)

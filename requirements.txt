@@ -15,5 +15,6 @@ pillow==10.4.0
 pylibdmtx==0.1.10
 pyzbar==0.1.9
 requests==2.32.3
+tkinter-tooltip @ git+https://github.com/melektron/tkinter-tooltip.git@754eae885bd02fa110e9aeb3be81dc944bb0ed79
 urllib3==2.2.2
 yarl==1.9.4

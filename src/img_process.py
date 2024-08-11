@@ -11,12 +11,10 @@ from multiprocessing.connection import Connection
 import asyncio
 import typing
 import dataclasses
-from PIL import Image
 import cv2
 
 from .video_source import VideoSource
-from .scanner import Scanner, CodeType
-from .partinfo import request_part_info_mouser, PartInfo
+from .scanner import Scanner, CodeType, CodeResult
 
 @dataclasses.dataclass
 class WorkerCommand:
@@ -29,8 +27,8 @@ class WorkerCommand:
 
 @dataclasses.dataclass
 class WorkerResponse:
-    frame: Image.Image
-    part_info: PartInfo | None = None   # optional, only if part info was found
+    frame: cv2.typing.MatLike
+    found_codes: list[CodeResult]
 
 
 async def async_pipe_recv(reader: Connection) -> typing.Any:
@@ -56,8 +54,6 @@ def image_process(pipe: Connection) -> None:
     camera = VideoSource()
     scanner = Scanner()
 
-    last_code: bytes = ""
-
     while True:
         # Receive command from main process
         cmd = pipe.recv()
@@ -78,29 +74,10 @@ def image_process(pipe: Connection) -> None:
         scanner.check_qr_code =  cmd.enable_qrcode
         found_codes = scanner.scan_for_codes(frame)
 
-        info: PartInfo | None = None
-        for result in found_codes:
-            # only fetch if we got a different datamatrix than the last one we already fetched
-            # and only look up the first detected code
-            # if we found datamatrix and we haven't found any valid part in this frame yet:
-            if result.type == CodeType.DATAMATRIX_2D and info is not ...:
-                # draw bounds in green to signify the detected code
-                result.draw_bounds(frame, (0, 255, 0), 2)
-                # if we already looked this up previously, no need to repeat
-                if last_code == result.data:
-                    continue
-                # otherwise save and request info
-                last_code = result.data
-                info = request_part_info_mouser(result.data)
-
-            else:
-                # other detected codes are marked red
-                result.draw_bounds(frame, (255, 0, 0), 2)
-
         # send the response back to main process
         pipe.send(WorkerResponse(
-            Image.fromarray(frame),
-            info
+            frame,
+            found_codes
         ))
     
     # before exiting, close pipe
